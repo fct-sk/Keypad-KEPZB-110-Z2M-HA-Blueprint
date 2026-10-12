@@ -4,11 +4,11 @@ Home Assistant automation blueprint for the **Frient KEPZB-110** keypad connecte
 
 ## Import into Home Assistant
 
-**[Import this blueprint into Home Assistant](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ffct-sk%2FKeypad-KEPZB-110-Z2M-HA-Blueprint%2Fblob%2Fmain%2Fblueprint.yaml)**
+**[Import this blueprint into Home Assistant](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ffct-sk%2FKeypad-KEPZB-110-Z2M-HA-Blueprint%2Fblob%2Fmain%2Fkeypad-z2m-control.yaml)**
 
 Alternatively, open **Settings → Automations & scenes → Blueprints → Import Blueprint** and paste this URL:
 
-`https://github.com/fct-sk/Keypad-KEPZB-110-Z2M-HA-Blueprint/blob/main/blueprint.yaml`
+`https://github.com/fct-sk/Keypad-KEPZB-110-Z2M-HA-Blueprint/blob/main/keypad-z2m-control.yaml`
 
 ## Features
 
