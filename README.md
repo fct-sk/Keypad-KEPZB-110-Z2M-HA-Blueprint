@@ -16,8 +16,6 @@ Alternatively, open **Settings → Automations & scenes → Blueprints → Impor
 - Disarm Alarmo using a PIN or allowed RFID tag.
 - **Keypad PINs are checked by this blueprint.** This is intentional: Alarmo's code-required options are global, so disabling them for a code-free Home Assistant app also bypasses PIN validation for keypad commands. The blueprint must therefore hold the primary keypad PIN and any additional allowed PINs.
 - RFID tags have a separate allow-list; you can optionally map allowed tags to an existing Alarmo code.
-- Restrict RFID tags with an explicit allow-list.
-- Optionally map all allowed RFID tags to one existing Alarmo code.
 - Synchronize alarm state back to the keypad.
 - Play audible entry/exit countdowns using Alarmo's configured delay.
 - Optional actions for SOS, arming, armed states, disarming, entry delay, and triggered alarm.
@@ -40,7 +38,6 @@ When creating an automation from the blueprint:
 6. Choose how RFID is passed to Alarmo:
    - Leave **Optional existing Alarmo code used for allowed RFID tags** blank if each tag UID is configured as its own Alarmo code.
    - Enter an existing code configured in Alarmo to map every allow-listed tag to that code. Alarmo will treat those tags as the same user/code.
-6. Make sure Alarmo's options for requiring a code to arm, disarm, or change modes match your intended security policy.
 
 Do not publish actual PINs or private RFID identifiers in issues, screenshots, or support requests.
 
