@@ -1,7 +1,7 @@
 blueprint:
   name: Keypad KEPZB 110 Z2M HA
   description: >-
-    Version 6. PINs typed at the keypad are checked against this blueprint's
+    Version 7. PINs typed at the keypad are checked against this blueprint's
     keypad-only allow-list before any Alarmo command is sent. This is needed
     when Alarmo's global code-required settings are disabled so Home Assistant
     app users can operate the alarm without a PIN. RFID remains separately
@@ -194,7 +194,10 @@ actions:
                 {%- set primary = pin_input | string | trim -%}
                 {%- set extras = (pin_list_input | string).split(';') | map('trim') | reject('equalto', '') | list -%}
                 {%- set pins = ([primary] if primary != '' else []) + extras -%}
-                {{ not entered.startswith('+') and entered != '' and entered in pins }}
+                {{ (not entered.startswith('+') and entered != '' and entered in pins)
+                   or (trigger.payload_json.get('action', '') == 'arm_all_zones'
+                       and entered == ''
+                       and states(alarm_entity) == 'disarmed') }}
               rfid_allowed: >-
                 {%- set entered = trigger.payload_json.get('action_code', '') | default('', true) | string -%}
                 {%- set tags = (rfid_list_input | string).split(';') | map('trim') | reject('equalto', '') | list -%}
