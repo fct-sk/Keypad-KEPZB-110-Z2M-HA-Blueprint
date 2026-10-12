@@ -282,7 +282,7 @@ actions:
                              or (states(alarm_entity) == 'arming' and state_attr(alarm_entity, 'next_state') == 'armed_home')))
                          or (keypad_action == 'arm_night_zones'
                            and (states(alarm_entity) == 'armed_night'
-                             or (states(alarm_entity) == 'arming' and state_attr(alarm_entity, 'next_state') == 'armed_night')) }}
+                             or (states(alarm_entity) == 'arming' and state_attr(alarm_entity, 'next_state') == 'armed_night'))) }}
                     timeout: "00:00:02"
                     continue_on_timeout: true
 
