@@ -1,5 +1,5 @@
 blueprint:
-  name: Frient KEPZB-110 — Alarmo via Zigbee2MQTT (PIN + RFID) v4
+  name: Keypad KEPZB 110 Z2M HA
   description: >-
     Version 4. Connects a Frient KEPZB-110 keypad through Zigbee2MQTT to
     Alarmo. Supports multiple PINs, an explicit RFID allow-list, optional
