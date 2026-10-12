@@ -1,4 +1,4 @@
-# Frient KEPZB-110 — Zigbee2MQTT + Alarmo Blueprint
+# Keypad KEPZB 110 Z2M HA
 
 Home Assistant automation blueprint for the **Frient KEPZB-110** keypad connected through **Zigbee2MQTT** and integrated with **Alarmo**.
 
