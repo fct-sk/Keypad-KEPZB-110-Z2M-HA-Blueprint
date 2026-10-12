@@ -14,7 +14,7 @@ Alternatively, open **Settings → Automations & scenes → Blueprints → Impor
 
 - Arm Alarmo in **Away**, **Home**, or **Night** mode from the keypad.
 - Disarm Alarmo using a PIN or allowed RFID tag.
-- **PINs are configured only in Alarmo.** This blueprint does not store or duplicate the PIN list; Alarmo validates each PIN and the blueprint reports the result back to the keypad.
+- **PINs are configured only in Alarmo.** This blueprint does not store or duplicate the PIN list; Alarmo validates each PIN and reports success or failure back to the keypad through Alarmo events.
 - Restrict RFID tags with an explicit allow-list.
 - Optionally map all allowed RFID tags to one existing Alarmo code.
 - Synchronize alarm state back to the keypad.
@@ -45,4 +45,5 @@ Do not publish actual PINs or private RFID identifiers in issues, screenshots, o
 ## Notes
 
 - The blueprint is intended for Zigbee2MQTT, not ZHA.
-- The YAML and template expressions were checked during preparation, but the blueprint should still be tested in your own Home Assistant/Alarmo setup before relying on it for security.
+- Updating the GitHub file does not automatically update a blueprint already imported into Home Assistant. Re-import or replace the local blueprint, then recreate/update the automation inputs if Home Assistant reports obsolete inputs from an older version.
+- Test invalid PIN, valid PIN, an unlisted RFID tag, open-sensor refusal, and exit/entry delays in your own Home Assistant/Alarmo setup before relying on it for security.
