@@ -246,7 +246,7 @@ actions:
                         data:
                           mode: away
                           code: "{{ alarm_code_to_use | trim }}"
-                          context_id: "{{ 'frient_keypad:' ~ (trigger.payload_json.get('action_transaction') | string) }}"
+                          context_id: "{{ trigger.payload_json.get('action_transaction') | int(0) }}"
                         continue_on_error: true
                   - conditions:
                       - condition: template
@@ -258,7 +258,7 @@ actions:
                         data:
                           mode: home
                           code: "{{ alarm_code_to_use | trim }}"
-                          context_id: "{{ 'frient_keypad:' ~ (trigger.payload_json.get('action_transaction') | string) }}"
+                          context_id: "{{ trigger.payload_json.get('action_transaction') | int(0) }}"
                         continue_on_error: true
                   - conditions:
                       - condition: template
@@ -270,7 +270,7 @@ actions:
                         data:
                           mode: night
                           code: "{{ alarm_code_to_use | trim }}"
-                          context_id: "{{ 'frient_keypad:' ~ (trigger.payload_json.get('action_transaction') | string) }}"
+                          context_id: "{{ trigger.payload_json.get('action_transaction') | int(0) }}"
                         continue_on_error: true
                   - conditions:
                       - condition: template
@@ -281,7 +281,7 @@ actions:
                           entity_id: !input control_panel
                         data:
                           code: "{{ alarm_code_to_use | trim }}"
-                          context_id: "{{ 'frient_keypad:' ~ (trigger.payload_json.get('action_transaction') | string) }}"
+                          context_id: "{{ trigger.payload_json.get('action_transaction') | int(0) }}"
                         continue_on_error: true
 
       # Alarmo -> keypad: let Alarmo's own validation decide whether the PIN was accepted.
@@ -291,10 +291,10 @@ actions:
           - condition: template
             value_template: >-
               {{ trigger.event.data.get('entity_id') == alarm_entity
-                 and (trigger.event.data.get('context_id', '') | string).startswith('frient_keypad:') }}
+                 and trigger.event.data.get('context_id') is not none }}
         sequence:
           - variables:
-              keypad_transaction: "{{ (trigger.event.data.get('context_id', '') | string).split(':')[-1] | int(0) }}"
+              keypad_transaction: "{{ trigger.event.data.get('context_id', 0) | int(0) }}"
               failure_reason: "{{ trigger.event.data.get('reason', '') | string }}"
               failure_command: "{{ trigger.event.data.get('command', '') | string | lower }}"
           - choose:
@@ -336,10 +336,10 @@ actions:
           - condition: template
             value_template: >-
               {{ trigger.event.data.get('entity_id') == alarm_entity
-                 and (trigger.event.data.get('context_id', '') | string).startswith('frient_keypad:') }}
+                 and trigger.event.data.get('context_id') is not none }}
         sequence:
           - variables:
-              keypad_transaction: "{{ (trigger.event.data.get('context_id', '') | string).split(':')[-1] | int(0) }}"
+              keypad_transaction: "{{ trigger.event.data.get('context_id', 0) | int(0) }}"
               alarm_action: "{{ trigger.event.data.get('action', '') | string | lower }}"
               alarm_mode: "{{ trigger.event.data.get('arm_mode', trigger.event.data.get('mode', '')) | string | lower }}"
           - choose:
