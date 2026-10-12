@@ -169,7 +169,6 @@ actions:
         sequence:
           - variables:
               keypad_action: "{{ trigger.payload_json.get('action', '') | string }}"
-              keypad_code: "{{ trigger.payload_json.get('action_code', '') | default('', true) | string }}"
               is_rfid: "{{ (trigger.payload_json.get('action_code', '') | default('', true) | string).startswith('+') }}"
               rfid_allowed: >-
                 {%- set entered = trigger.payload_json.get('action_code', '') | default('', true) | string -%}
