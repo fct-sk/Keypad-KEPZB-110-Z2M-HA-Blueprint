@@ -1,12 +1,13 @@
 blueprint:
   name: Keypad KEPZB 110 Z2M HA
   description: >-
-    Version 4. Connects a Frient KEPZB-110 keypad through Zigbee2MQTT to
-    Alarmo. Supports multiple PINs, an explicit RFID allow-list, optional
-    mapping of allowed RFID tags to an Alarmo PIN, state synchronization,
-    SOS action and entry/exit beeps using Alarmo's actual delay. RFID IDs
-    arrive as action_code values beginning with +. Present the tag, then
-    press the desired arm/disarm button.
+    Version 5. PINs are validated only by Alarmo; no PIN is stored or
+    allow-listed in this blueprint. Supports an RFID allow-list, optional
+    mapping of allowed RFID tags to an existing Alarmo code, bidirectional
+    keypad/alarm state synchronization, SOS action, and audible entry/exit
+    delays based on Alarmo's configured delay. RFID UIDs arrive as action_code
+    values beginning with +. Present the tag first, then press the desired
+    arm/disarm button.
   domain: automation
   homeassistant:
     min_version: 2024.6.0
@@ -31,24 +32,6 @@ blueprint:
         entity:
           domain: alarm_control_panel
           multiple: false
-    pin:
-      name: Primary PIN code
-      description: >-
-        Primary PIN. It must also be configured as a valid user code in Alarmo.
-        This keeps compatibility with the previous version of this blueprint.
-      default: ""
-      selector:
-        text: {}
-    pin_list:
-      name: Additional valid PIN codes
-      description: >-
-        Optional additional PINs separated by semicolons, e.g. 2345;3456.
-        Every PIN must also exist in Alarmo. These are checked here before the
-        request is sent to Alarmo so the keypad gets clear rejection feedback.
-      default: ""
-      selector:
-        text:
-          multiline: true
     rfid_list:
       name: Allowed RFID tag IDs
       description: >-
@@ -60,14 +43,14 @@ blueprint:
         text:
           multiline: true
     rfid_alarm_code:
-      name: Optional Alarmo code for all allowed RFID tags
+      name: Optional existing Alarmo code used for allowed RFID tags
       description: >-
         Leave blank to pass each RFID UID (such as +3DD5FCFF) to Alarmo as its
-        own code; then that UID must also be configured as an Alarmo code.
-        Alternatively enter an existing valid Alarmo PIN here to map every
-        allow-listed tag to that single Alarmo code. The latter supports many
-        tags without creating an alphanumeric Alarmo code for each tag, but
-        Alarmo will see them as the same user/code.
+        own code; that UID must then be configured in Alarmo. Alternatively,
+        enter an existing code configured in Alarmo to map every allow-listed
+        tag to that code. In that case Alarmo treats all those tags as the
+        same user/code. This setting is only for RFID mapping; keypad PINs are
+        sent to Alarmo unchanged and are not configured in this blueprint.
       default: ""
       selector:
         text: {}
@@ -115,8 +98,6 @@ blueprint:
 
 variables:
   alarm_entity: !input control_panel
-  pin_input: !input pin
-  pin_list_input: !input pin_list
   rfid_list_input: !input rfid_list
   rfid_alarm_code_input: !input rfid_alarm_code
 
@@ -124,6 +105,12 @@ triggers:
   - trigger: mqtt
     topic: !input z2m_keypad_path
     id: keypad_mqtt
+  - trigger: event
+    event_type: alarmo_failed_to_arm
+    id: alarmo_failed
+  - trigger: event
+    event_type: alarmo_command_success
+    id: alarmo_success
   - trigger: state
     entity_id: !input control_panel
     to: arming
@@ -157,7 +144,7 @@ conditions: []
 
 actions:
   - choose:
-      # Keypad -> Alarmo
+      # SOS on the keypad
       - conditions:
           - condition: trigger
             id: keypad_mqtt
@@ -169,6 +156,7 @@ actions:
           - choose:
               default: !input action_panic
 
+      # Keypad -> Alarmo. PINs are passed directly to Alarmo without a local allow-list.
       - conditions:
           - condition: trigger
             id: keypad_mqtt
@@ -181,17 +169,12 @@ actions:
         sequence:
           - variables:
               keypad_action: "{{ trigger.payload_json.get('action', '') | string }}"
-              keypad_code_allowed: >-
+              keypad_code: "{{ trigger.payload_json.get('action_code', '') | default('', true) | string }}"
+              is_rfid: "{{ (trigger.payload_json.get('action_code', '') | default('', true) | string).startswith('+') }}"
+              rfid_allowed: >-
                 {%- set entered = trigger.payload_json.get('action_code', '') | default('', true) | string -%}
-                {%- set single_pin = pin_input | string | trim -%}
-                {%- set extra_pins = (pin_list_input | string).split(';') | map('trim') | reject('equalto', '') | list -%}
-                {%- set pins = ([single_pin] if single_pin != '' else []) + extra_pins -%}
                 {%- set tags = (rfid_list_input | string).split(';') | map('trim') | reject('equalto', '') | list -%}
-                {%- if entered.startswith('+') -%}
-                  {{ entered in tags }}
-                {%- else -%}
-                  {{ entered != '' and entered in pins }}
-                {%- endif -%}
+                {{ entered in tags }}
               alarm_code_to_use: >-
                 {%- set entered = trigger.payload_json.get('action_code', '') | default('', true) | string -%}
                 {%- if entered.startswith('+') and (rfid_alarm_code_input | string | trim) != '' -%}
@@ -201,10 +184,10 @@ actions:
                 {%- endif -%}
 
           - choose:
-              # Reject an unknown PIN or an RFID tag which is not allow-listed.
+              # Block RFID tags which are not on this blueprint's allow-list.
               - conditions:
                   - condition: template
-                    value_template: "{{ not (keypad_code_allowed | bool) }}"
+                    value_template: "{{ (is_rfid | bool) and not (rfid_allowed | bool) }}"
                 sequence:
                   - action: mqtt.publish
                     data:
@@ -212,12 +195,13 @@ actions:
                       qos: 0
                       retain: false
                       payload: >-
-                        {{ {'arm_mode': {'transaction': trigger.payload_json.get('action_transaction'), 'mode': 'invalid_code'}} | tojson }}
+                        {{ {'arm_mode': {'transaction': trigger.payload_json.get('action_transaction') | int(0), 'mode': 'invalid_code'}} | tojson }}
 
-              # Valid PIN/tag: acknowledge the keypad transaction, then ask Alarmo.
+              # If the alarm is already in the requested armed state, Alarmo itself treats
+              # the request as a no-op; acknowledge it rather than leaving the keypad waiting.
               - conditions:
                   - condition: template
-                    value_template: "{{ keypad_code_allowed | bool }}"
+                    value_template: "{{ keypad_action == 'arm_all_zones' and states(alarm_entity) == 'armed_away' }}"
                 sequence:
                   - action: mqtt.publish
                     data:
@@ -225,104 +209,184 @@ actions:
                       qos: 0
                       retain: false
                       payload: >-
-                        {{ {'arm_mode': {'transaction': trigger.payload_json.get('action_transaction'), 'mode': trigger.payload_json.get('action')}} | tojson }}
+                        {{ {'arm_mode': {'transaction': trigger.payload_json.get('action_transaction') | int(0), 'mode': 'arm_all_zones'}} | tojson }}
 
-                  - choose:
-                      - conditions:
-                          - condition: template
-                            value_template: "{{ keypad_action == 'arm_all_zones' }}"
-                        sequence:
-                          - action: alarmo.arm
-                            target:
-                              entity_id: !input control_panel
-                            data:
-                              mode: away
-                              code: "{{ alarm_code_to_use | trim }}"
-                            continue_on_error: true
-                      - conditions:
-                          - condition: template
-                            value_template: "{{ keypad_action == 'arm_day_zones' }}"
-                        sequence:
-                          - action: alarmo.arm
-                            target:
-                              entity_id: !input control_panel
-                            data:
-                              mode: home
-                              code: "{{ alarm_code_to_use | trim }}"
-                            continue_on_error: true
-                      - conditions:
-                          - condition: template
-                            value_template: "{{ keypad_action == 'arm_night_zones' }}"
-                        sequence:
-                          - action: alarmo.arm
-                            target:
-                              entity_id: !input control_panel
-                            data:
-                              mode: night
-                              code: "{{ alarm_code_to_use | trim }}"
-                            continue_on_error: true
-                      - conditions:
-                          - condition: template
-                            value_template: "{{ keypad_action == 'disarm' }}"
-                        sequence:
-                          - action: alarmo.disarm
-                            target:
-                              entity_id: !input control_panel
-                            data:
-                              code: "{{ alarm_code_to_use | trim }}"
-                            continue_on_error: true
+              - conditions:
+                  - condition: template
+                    value_template: "{{ keypad_action == 'arm_day_zones' and states(alarm_entity) == 'armed_home' }}"
+                sequence:
+                  - action: mqtt.publish
+                    data:
+                      topic: !input z2m_keypad_path_set
+                      qos: 0
+                      retain: false
+                      payload: >-
+                        {{ {'arm_mode': {'transaction': trigger.payload_json.get('action_transaction') | int(0), 'mode': 'arm_day_zones'}} | tojson }}
 
-                  - wait_template: >-
-                      {{ (keypad_action == 'disarm' and states(alarm_entity) == 'disarmed')
-                         or (keypad_action == 'arm_all_zones'
-                           and (states(alarm_entity) == 'armed_away'
-                             or (states(alarm_entity) == 'arming' and state_attr(alarm_entity, 'next_state') == 'armed_away')))
-                         or (keypad_action == 'arm_day_zones'
-                           and (states(alarm_entity) == 'armed_home'
-                             or (states(alarm_entity) == 'arming' and state_attr(alarm_entity, 'next_state') == 'armed_home')))
-                         or (keypad_action == 'arm_night_zones'
-                           and (states(alarm_entity) == 'armed_night'
-                             or (states(alarm_entity) == 'arming' and state_attr(alarm_entity, 'next_state') == 'armed_night'))) }}
-                    timeout: "00:00:02"
-                    continue_on_timeout: true
-
-                  # Correct the initial acknowledgement if Alarmo could not complete the request.
-                  - choose:
-                      - conditions:
-                          - condition: template
-                            value_template: >-
-                              {{ keypad_action == 'disarm' and states(alarm_entity) == 'disarmed' }}
-                        sequence: []
-                      - conditions:
-                          - condition: template
-                            value_template: >-
-                              {{ keypad_action == 'arm_all_zones'
-                                 and (states(alarm_entity) == 'armed_away'
-                                   or (states(alarm_entity) == 'arming' and state_attr(alarm_entity, 'next_state') == 'armed_away')) }}
-                        sequence: []
-                      - conditions:
-                          - condition: template
-                            value_template: >-
-                              {{ keypad_action == 'arm_day_zones'
-                                 and (states(alarm_entity) == 'armed_home'
-                                   or (states(alarm_entity) == 'arming' and state_attr(alarm_entity, 'next_state') == 'armed_home')) }}
-                        sequence: []
-                      - conditions:
-                          - condition: template
-                            value_template: >-
-                              {{ keypad_action == 'arm_night_zones'
-                                 and (states(alarm_entity) == 'armed_night'
-                                   or (states(alarm_entity) == 'arming' and state_attr(alarm_entity, 'next_state') == 'armed_night')) }}
-                        sequence: []
-                    default:
-                      - action: mqtt.publish
+              - conditions:
+                  - condition: template
+                    value_template: "{{ keypad_action == 'arm_night_zones' and states(alarm_entity) == 'armed_night' }}"
+                sequence:
+                  - action: mqtt.publish
+                    data:
+                      topic: !input z2m_keypad_path_set
+                      qos: 0
+                      retain: false
+                      payload: >-
+                        {{ {'arm_mode': {'transaction': trigger.payload_json.get('action_transaction') | int(0), 'mode': 'arm_night_zones'}} | tojson }}
+            default:
+              - choose:
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ keypad_action == 'arm_all_zones' }}"
+                    sequence:
+                      - action: alarmo.arm
+                        target:
+                          entity_id: !input control_panel
                         data:
-                          topic: !input z2m_keypad_path_set
-                          qos: 0
-                          retain: false
-                          payload: >-
-                            {% set response_mode = 'invalid_code' if keypad_action == 'disarm' else 'not_ready' %}
-                            {{ {'arm_mode': {'transaction': trigger.payload_json.get('action_transaction'), 'mode': response_mode}} | tojson }}
+                          mode: away
+                          code: "{{ alarm_code_to_use | trim }}"
+                          context_id: "{{ 'frient_keypad:' ~ (trigger.payload_json.get('action_transaction') | string) }}"
+                        continue_on_error: true
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ keypad_action == 'arm_day_zones' }}"
+                    sequence:
+                      - action: alarmo.arm
+                        target:
+                          entity_id: !input control_panel
+                        data:
+                          mode: home
+                          code: "{{ alarm_code_to_use | trim }}"
+                          context_id: "{{ 'frient_keypad:' ~ (trigger.payload_json.get('action_transaction') | string) }}"
+                        continue_on_error: true
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ keypad_action == 'arm_night_zones' }}"
+                    sequence:
+                      - action: alarmo.arm
+                        target:
+                          entity_id: !input control_panel
+                        data:
+                          mode: night
+                          code: "{{ alarm_code_to_use | trim }}"
+                          context_id: "{{ 'frient_keypad:' ~ (trigger.payload_json.get('action_transaction') | string) }}"
+                        continue_on_error: true
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ keypad_action == 'disarm' }}"
+                    sequence:
+                      - action: alarmo.disarm
+                        target:
+                          entity_id: !input control_panel
+                        data:
+                          code: "{{ alarm_code_to_use | trim }}"
+                          context_id: "{{ 'frient_keypad:' ~ (trigger.payload_json.get('action_transaction') | string) }}"
+                        continue_on_error: true
+
+      # Alarmo -> keypad: let Alarmo's own validation decide whether the PIN was accepted.
+      - conditions:
+          - condition: trigger
+            id: alarmo_failed
+          - condition: template
+            value_template: >-
+              {{ trigger.event.data.get('entity_id') == alarm_entity
+                 and (trigger.event.data.get('context_id', '') | string).startswith('frient_keypad:') }}
+        sequence:
+          - variables:
+              keypad_transaction: "{{ (trigger.event.data.get('context_id', '') | string).split(':')[-1] | int(0) }}"
+              failure_reason: "{{ trigger.event.data.get('reason', '') | string }}"
+              failure_command: "{{ trigger.event.data.get('command', '') | string | lower }}"
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ failure_reason == 'invalid_code' }}"
+                sequence:
+                  - action: mqtt.publish
+                    data:
+                      topic: !input z2m_keypad_path_set
+                      qos: 0
+                      retain: false
+                      payload: >-
+                        {{ {'arm_mode': {'transaction': keypad_transaction | int(0), 'mode': 'invalid_code'}} | tojson }}
+              - conditions:
+                  - condition: template
+                    value_template: "{{ failure_reason == 'not_allowed' and failure_command == 'disarm' }}"
+                sequence:
+                  - action: mqtt.publish
+                    data:
+                      topic: !input z2m_keypad_path_set
+                      qos: 0
+                      retain: false
+                      payload: >-
+                        {{ {'arm_mode': {'transaction': keypad_transaction | int(0), 'mode': 'already_disarmed'}} | tojson }}
+            default:
+              - action: mqtt.publish
+                data:
+                  topic: !input z2m_keypad_path_set
+                  qos: 0
+                  retain: false
+                  payload: >-
+                    {{ {'arm_mode': {'transaction': keypad_transaction | int(0), 'mode': 'not_ready'}} | tojson }}
+
+      # Alarmo confirms a successful command only after its own checks pass.
+      - conditions:
+          - condition: trigger
+            id: alarmo_success
+          - condition: template
+            value_template: >-
+              {{ trigger.event.data.get('entity_id') == alarm_entity
+                 and (trigger.event.data.get('context_id', '') | string).startswith('frient_keypad:') }}
+        sequence:
+          - variables:
+              keypad_transaction: "{{ (trigger.event.data.get('context_id', '') | string).split(':')[-1] | int(0) }}"
+              alarm_action: "{{ trigger.event.data.get('action', '') | string | lower }}"
+              alarm_mode: "{{ trigger.event.data.get('arm_mode', trigger.event.data.get('mode', '')) | string | lower }}"
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ alarm_action == 'disarm' }}"
+                sequence:
+                  - action: mqtt.publish
+                    data:
+                      topic: !input z2m_keypad_path_set
+                      qos: 0
+                      retain: false
+                      payload: >-
+                        {{ {'arm_mode': {'transaction': keypad_transaction | int(0), 'mode': 'disarm'}} | tojson }}
+              - conditions:
+                  - condition: template
+                    value_template: "{{ alarm_action == 'arm' and alarm_mode == 'away' }}"
+                sequence:
+                  - action: mqtt.publish
+                    data:
+                      topic: !input z2m_keypad_path_set
+                      qos: 0
+                      retain: false
+                      payload: >-
+                        {{ {'arm_mode': {'transaction': keypad_transaction | int(0), 'mode': 'arm_all_zones'}} | tojson }}
+              - conditions:
+                  - condition: template
+                    value_template: "{{ alarm_action == 'arm' and alarm_mode == 'home' }}"
+                sequence:
+                  - action: mqtt.publish
+                    data:
+                      topic: !input z2m_keypad_path_set
+                      qos: 0
+                      retain: false
+                      payload: >-
+                        {{ {'arm_mode': {'transaction': keypad_transaction | int(0), 'mode': 'arm_day_zones'}} | tojson }}
+              - conditions:
+                  - condition: template
+                    value_template: "{{ alarm_action == 'arm' and alarm_mode == 'night' }}"
+                sequence:
+                  - action: mqtt.publish
+                    data:
+                      topic: !input z2m_keypad_path_set
+                      qos: 0
+                      retain: false
+                      payload: >-
+                        {{ {'arm_mode': {'transaction': keypad_transaction | int(0), 'mode': 'arm_night_zones'}} | tojson }}
 
       # Alarmo -> keypad. Delay/beeping is determined only by Alarmo's actual delay.
       - conditions:
@@ -432,5 +496,7 @@ actions:
 
     default: []
 
-mode: queued
-max: 10
+    default: []
+
+mode: parallel
+max: 20
