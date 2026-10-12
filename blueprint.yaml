@@ -1,13 +1,11 @@
 blueprint:
   name: Keypad KEPZB 110 Z2M HA
   description: >-
-    Version 5. PINs are validated only by Alarmo; no PIN is stored or
-    allow-listed in this blueprint. Supports an RFID allow-list, optional
-    mapping of allowed RFID tags to an existing Alarmo code, bidirectional
-    keypad/alarm state synchronization, SOS action, and audible entry/exit
-    delays based on Alarmo's configured delay. RFID UIDs arrive as action_code
-    values beginning with +. Present the tag first, then press the desired
-    arm/disarm button.
+    Version 6. PINs typed at the keypad are checked against this blueprint's
+    keypad-only allow-list before any Alarmo command is sent. This is needed
+    when Alarmo's global code-required settings are disabled so Home Assistant
+    app users can operate the alarm without a PIN. RFID remains separately
+    allow-listed. Alarm state sync and audible delays follow Alarmo.
   domain: automation
   homeassistant:
     min_version: 2024.6.0
@@ -32,6 +30,26 @@ blueprint:
         entity:
           domain: alarm_control_panel
           multiple: false
+    pin:
+      name: Primary PIN accepted at the keypad
+      description: >-
+        PIN allowed for keypad commands. Also configure this code under Alarmo
+        User management if you want to keep its user list aligned. When Alarmo's
+        global Require code settings are disabled, Alarmo itself skips PIN
+        validation, so this blueprint list is what enforces keypad-only PIN
+        access while the Home Assistant app can remain code-free.
+      default: ""
+      selector:
+        text: {}
+    pin_list:
+      name: Additional PINs accepted at the keypad
+      description: >-
+        Optional extra PINs accepted by the keypad, separated by semicolons.
+        Keep this list synchronized with the relevant Alarmo user codes.
+      default: ""
+      selector:
+        text:
+          multiline: true
     rfid_list:
       name: Allowed RFID tag IDs
       description: >-
@@ -49,8 +67,9 @@ blueprint:
         own code; that UID must then be configured in Alarmo. Alternatively,
         enter an existing code configured in Alarmo to map every allow-listed
         tag to that code. In that case Alarmo treats all those tags as the
-        same user/code. This setting is only for RFID mapping; keypad PINs are
-        sent to Alarmo unchanged and are not configured in this blueprint.
+        same user/code. PINs entered on the keypad are validated separately
+        against the primary/additional PIN list above before being sent to
+        Alarmo. This lets the app remain code-free while requiring a PIN at the keypad.
       default: ""
       selector:
         text: {}
@@ -98,6 +117,8 @@ blueprint:
 
 variables:
   alarm_entity: !input control_panel
+  pin_input: !input pin
+  pin_list_input: !input pin_list
   rfid_list_input: !input rfid_list
   rfid_alarm_code_input: !input rfid_alarm_code
 
@@ -170,10 +191,16 @@ actions:
           - variables:
               keypad_action: "{{ trigger.payload_json.get('action', '') | string }}"
               is_rfid: "{{ (trigger.payload_json.get('action_code', '') | default('', true) | string).startswith('+') }}"
+              pin_allowed: >-
+                {%- set entered = trigger.payload_json.get('action_code', '') | default('', true) | string -%}
+                {%- set primary = pin_input | string | trim -%}
+                {%- set extras = (pin_list_input | string).split(';') | map('trim') | reject('equalto', '') | list -%}
+                {%- set pins = ([primary] if primary != '' else []) + extras -%}
+                {{ not entered.startswith('+') and entered != '' and entered in pins }}
               rfid_allowed: >-
                 {%- set entered = trigger.payload_json.get('action_code', '') | default('', true) | string -%}
                 {%- set tags = (rfid_list_input | string).split(';') | map('trim') | reject('equalto', '') | list -%}
-                {{ entered in tags }}
+                {{ entered.startswith('+') and entered in tags }}
               alarm_code_to_use: >-
                 {%- set entered = trigger.payload_json.get('action_code', '') | default('', true) | string -%}
                 {%- if entered.startswith('+') and (rfid_alarm_code_input | string | trim) != '' -%}
@@ -183,10 +210,12 @@ actions:
                 {%- endif -%}
 
           - choose:
-              # Block RFID tags which are not on this blueprint's allow-list.
+              # Enforce keypad credentials locally so app code requirements can remain disabled.
               - conditions:
                   - condition: template
-                    value_template: "{{ (is_rfid | bool) and not (rfid_allowed | bool) }}"
+                    value_template: >-
+                      {{ ((is_rfid | bool) and not (rfid_allowed | bool))
+                         or (not (is_rfid | bool) and not (pin_allowed | bool)) }}
                 sequence:
                   - action: mqtt.publish
                     data:
