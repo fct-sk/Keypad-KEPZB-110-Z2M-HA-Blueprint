@@ -1,7 +1,7 @@
 blueprint:
   name: Keypad KEPZB 110 Z2M HA
   description: >-
-    Version 7. PINs typed at the keypad are checked against this blueprint's
+    Version 8. PINs typed at the keypad are checked against this blueprint's
     keypad-only allow-list before any Alarmo command is sent. The lock button
     can arm Away without a PIN only while the alarm is disarmed. Disarming and
     all other keypad commands still require an allowed PIN or RFID. This lets
@@ -196,7 +196,8 @@ actions:
                 {%- set extras = (pin_list_input | string).split(';') | map('trim') | reject('equalto', '') | list -%}
                 {%- set pins = ([primary] if primary != '' else []) + extras -%}
                 {{ (not entered.startswith('+') and entered != '' and entered in pins)
-                   or (trigger.payload_json.get('action', '') == 'arm_all_zones'
+                   or (trigger.payload_json.get('action', '') in
+                       ['arm_all_zones', 'arm_day_zones', 'arm_night_zones']
                        and entered == ''
                        and states(alarm_entity) == 'disarmed') }}
               rfid_allowed: >-
