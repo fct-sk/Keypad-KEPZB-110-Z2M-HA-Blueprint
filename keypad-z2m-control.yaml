@@ -173,9 +173,7 @@ actions:
             value_template: >-
               {{ trigger.payload_json is defined
                  and trigger.payload_json.get('action', '') == 'emergency' }}
-        sequence:
-          - choose: []
-            default: !input action_panic
+        sequence: !input action_panic
 
       # Keypad -> Alarmo. PINs are passed directly to Alarmo without a local allow-list.
       - conditions:
@@ -434,8 +432,11 @@ actions:
                       payload: >-
                         {{ {'arm_mode': {'mode': 'exit_delay', 'delay': (state_attr(alarm_entity, 'delay') | int(0)), 'audiblenotif': 1}} | tojson }}
             default: []
-          - choose: []
-            default: !input action_arming
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ true }}"
+                sequence: !input action_arming
 
       - conditions:
           - condition: trigger
@@ -447,8 +448,11 @@ actions:
               qos: 0
               retain: false
               payload: '{"arm_mode":{"mode":"arm_all_zones"}}'
-          - choose: []
-            default: !input action_armed_away
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ true }}"
+                sequence: !input action_armed_away
 
       - conditions:
           - condition: trigger
@@ -460,8 +464,11 @@ actions:
               qos: 0
               retain: false
               payload: '{"arm_mode":{"mode":"arm_day_zones"}}'
-          - choose: []
-            default: !input action_armed_home
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ true }}"
+                sequence: !input action_armed_home
 
       - conditions:
           - condition: trigger
@@ -473,8 +480,11 @@ actions:
               qos: 0
               retain: false
               payload: '{"arm_mode":{"mode":"arm_night_zones"}}'
-          - choose: []
-            default: !input action_armed_night
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ true }}"
+                sequence: !input action_armed_night
 
       - conditions:
           - condition: trigger
@@ -486,8 +496,11 @@ actions:
               qos: 0
               retain: false
               payload: '{"arm_mode":{"mode":"disarm"}}'
-          - choose: []
-            default: !input action_disarmed
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ true }}"
+                sequence: !input action_disarmed
 
       - conditions:
           - condition: trigger
@@ -506,8 +519,11 @@ actions:
                       payload: >-
                         {{ {'arm_mode': {'mode': 'entry_delay', 'delay': (state_attr(alarm_entity, 'delay') | int(0)), 'audiblenotif': 1}} | tojson }}
             default: []
-          - choose: []
-            default: !input action_pending
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ true }}"
+                sequence: !input action_pending
 
       - conditions:
           - condition: trigger
@@ -519,8 +535,11 @@ actions:
               qos: 0
               retain: false
               payload: '{"arm_mode":{"mode":"in_alarm","audiblenotif":1}}'
-          - choose: []
-            default: !input action_triggered
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ true }}"
+                sequence: !input action_triggered
 
     default: []
 
