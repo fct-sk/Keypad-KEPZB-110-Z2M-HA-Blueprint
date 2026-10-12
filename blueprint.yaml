@@ -496,7 +496,5 @@ actions:
 
     default: []
 
-    default: []
-
 mode: parallel
 max: 20
