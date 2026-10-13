@@ -1,7 +1,7 @@
 blueprint:
   name: Keypad KEPZB 110 Z2M HA
   description: >-
-    Version 9. PINs typed at the keypad are checked against this blueprint's
+    Version 10. PINs typed at the keypad are checked against this blueprint's
     keypad-only allow-list before any Alarmo command is sent. This is needed
     when Alarmo's global code-required settings are disabled so Home Assistant
     app users can operate the alarm without a PIN. RFID remains separately
@@ -327,6 +327,20 @@ actions:
               failure_reason: "{{ trigger.event.data.get('reason', '') | string }}"
               failure_command: "{{ trigger.event.data.get('command', '') | string | lower }}"
           - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ failure_reason == 'open_sensors' }}"
+                sequence:
+                  - action: persistent_notification.create
+                    data:
+                      notification_id: keypad_alarm_not_ready
+                      title: "Alarmo: zapnutie odmietnuté"
+                      message: >-
+                        Alarm sa nepodarilo zapnúť. Otvorené alebo blokujúce
+                        senzory:
+                        {% for entity_id in trigger.event.data.get('sensors', []) %}
+                        - {{ state_attr(entity_id, 'friendly_name') or entity_id }}
+                        {% endfor %}
               - conditions:
                   - condition: template
                     value_template: "{{ failure_reason == 'invalid_code' }}"
